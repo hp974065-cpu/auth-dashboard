@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
                 email,
                 password: hashedPassword,
                 role: isFirstUser ? "ADMIN" : "USER",
-                isApproved: true // Auto-approve all users
+                isApproved: isFirstUser // First user (admin) is auto-approved, others are pending
             }
         })
 

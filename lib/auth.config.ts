@@ -22,7 +22,13 @@ export const authConfig: NextAuthConfig = {
                 return false
             }
 
-            // Approval check removed to allow open access
+            // Check if user is approved
+            if (!auth?.user?.isApproved) {
+                if (nextUrl.pathname !== "/pending") {
+                    return Response.redirect(new URL("/pending", nextUrl))
+                }
+                return true
+            }
 
             // Check admin routes
             if (isAdminRoute && auth?.user?.role !== "ADMIN") {
