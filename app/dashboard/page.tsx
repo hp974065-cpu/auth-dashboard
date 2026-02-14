@@ -77,6 +77,13 @@ export default async function DashboardPage() {
                             <p>Configure your account</p>
                         </div>
                     </Link>
+                    <Link href="/dashboard/study-notes" className="stat-card clickable">
+                        <div className="stat-icon">📝</div>
+                        <div className="stat-content">
+                            <h3>Study Notes</h3>
+                            <p>Generate AI summaries from videos</p>
+                        </div>
+                    </Link>
                 </div>
             </main>
         </div>
