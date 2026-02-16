@@ -22,8 +22,8 @@ export default function StudyNotesPage() {
             } else {
                 setNotes(result.notes ?? null)
             }
-        } catch (e) {
-            setError("An unexpected error occurred.")
+        } catch (e: any) {
+            setError(e.message || "An unexpected error occurred.")
         } finally {
             setIsLoading(false)
         }
@@ -59,6 +59,8 @@ export default function StudyNotesPage() {
                     </div>
                 </div>
             )}
+
+            <p style={{ marginTop: "2rem", color: "#666", fontSize: "0.8rem" }}>v1.4</p>
         </div>
     )
 }
