@@ -25,12 +25,10 @@ function extractVideoId(url: string): string | null {
     return null
 }
 
-// Production: Call Python Serverless Function
+// Method 1: Python Serverless Function (Primary for Production)
 async function startVercelPythonTranscript(videoUrl: string): Promise<string | null> {
     console.log(`[Study Notes] Calling Python API for ${videoUrl}`);
     try {
-        // Construct full URL. VERCEL_URL is provided by Vercel
-        // If testing locally with 'vercel dev', it might be localhost:3000
         const host = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
         const apiUrl = `${host}/api/py-transcript?url=${encodeURIComponent(videoUrl)}`;
 
@@ -38,15 +36,12 @@ async function startVercelPythonTranscript(videoUrl: string): Promise<string | n
         const response = await fetch(apiUrl, {
             method: 'GET',
             cache: 'no-store',
-            headers: {
-                // Optional: Add a secret if you want to protect this endpoint
-            }
+            next: { revalidate: 0 }
         });
 
         if (!response.ok) {
-            console.error(`[Study Notes] Python API failed: ${response.status} ${response.statusText}`);
             const errorText = await response.text();
-            console.error(`[Study Notes] Error details: ${errorText}`);
+            console.error(`[Study Notes] Python API failed (${response.status}): ${errorText}`);
             return null;
         }
 
@@ -59,7 +54,7 @@ async function startVercelPythonTranscript(videoUrl: string): Promise<string | n
     }
 }
 
-// Development: Run yt-dlp locally via Node wrapper
+// Method 2: Local yt-dlp (Primary for Dev)
 async function tryYtDlpLocal(url: string): Promise<string | null> {
     console.log(`[Study Notes] Attempting local yt-dlp execution for ${url}`);
 
@@ -82,7 +77,6 @@ async function tryYtDlpLocal(url: string): Promise<string | null> {
             output: outputPath,
             noWarnings: true,
             noCheckCertificate: true,
-            // noCheckCertificate: true, // Duplicate key issue fixed in thought process, handled by exec
         });
 
         // Find the generated VTT file
@@ -111,6 +105,46 @@ async function tryYtDlpLocal(url: string): Promise<string | null> {
         console.error(`[Study Notes] yt-dlp error: ${e.message}`);
     }
     return null;
+}
+
+// Method 3: youtube-transcript library (Fallback)
+async function tryYoutubeTranscript(videoId: string): Promise<string | null> {
+    try {
+        console.log(`[Study Notes] Fallback: youtube-transcript for ${videoId}`);
+        const { YoutubeTranscript } = await import("youtube-transcript")
+        const items = await YoutubeTranscript.fetchTranscript(videoId)
+        if (!items || items.length === 0) return null
+        return items.map(item => item.text).join(" ").slice(0, 15000)
+    } catch (e: any) {
+        console.warn(`[Study Notes] youtube-transcript failed: ${e.message}`);
+        return null
+    }
+}
+
+// Method 4: youtubei.js (Deep Fallback)
+async function tryYoutubeiJS(videoId: string): Promise<string | null> {
+    try {
+        console.log(`[Study Notes] Fallback: youtubei.js for ${videoId}`);
+        // Dynamic import to avoid build issues if not used
+        const { Innertube, UniversalCache } = await import("youtubei.js");
+
+        const youtube = await Innertube.create({
+            cache: new UniversalCache(false),
+            generate_session_locally: true
+        });
+
+        const info = await youtube.getInfo(videoId);
+        const transcriptData = await info.getTranscript();
+
+        if (transcriptData?.transcript?.content?.body?.initial_segments) {
+            const transcript = transcriptData.transcript.content.body.initial_segments.map((seg: any) => seg.snippet.text).join(" ");
+            return transcript.slice(0, 15000) || null;
+        }
+        return null;
+    } catch (e: any) {
+        console.warn(`[Study Notes] youtubei.js failed: ${e.message}`);
+        return null;
+    }
 }
 
 function cleanVtt(vttContent: string): string {
@@ -156,7 +190,7 @@ export async function generateStudyNotesAction(formData: FormData) {
 
     // 4. Fetch Transcript via yt-dlp
     // Use the provided URL directly if valid, or reconstruct it
-    console.log(`[Study Notes v2.1] Fetching transcript for: ${videoId} using yt-dlp`)
+    console.log(`[Study Notes v2.2] Processing: ${videoId}`)
 
     let transcript: string | null = null;
     const fullUrl = `https://www.youtube.com/watch?v=${videoId}`;
@@ -165,20 +199,27 @@ export async function generateStudyNotesAction(formData: FormData) {
     // Vercel sets NODE_ENV=production. local dev sets NODE_ENV=development
     const isProduction = process.env.NODE_ENV === 'production';
 
-    try {
-        if (isProduction) {
-            transcript = await startVercelPythonTranscript(fullUrl);
-        } else {
-            transcript = await tryYtDlpLocal(fullUrl);
-        }
-    } catch (e) {
-        console.error("Critical error in tryYtDlp", e);
+    // Strategy 1: yt-dlp (Best)
+    if (isProduction) {
+        transcript = await startVercelPythonTranscript(fullUrl);
+    } else {
+        transcript = await tryYtDlpLocal(fullUrl);
+    }
+
+    // Strategy 2: youtube-transcript (Fallback)
+    if (!transcript) {
+        transcript = await tryYoutubeTranscript(videoId);
+    }
+
+    // Strategy 3: youtubei.js (Last Resort)
+    if (!transcript) {
+        transcript = await tryYoutubeiJS(videoId);
     }
 
     if (!transcript) {
-        console.log("[Study Notes] ❌ yt-dlp failed")
+        console.log("[Study Notes] ❌ All methods failed")
         return {
-            error: "Could not retrieve transcript. Please ensure the video has English captions (auto-generated or manual)."
+            error: "Could not retrieve transcript. I tried yt-dlp, generic libraries, and scraping. Using a different video is recommended."
         }
     }
 
