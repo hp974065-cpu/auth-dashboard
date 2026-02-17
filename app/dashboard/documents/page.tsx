@@ -4,16 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import UploadForm from "./UploadForm";
-
-// Manual definition to bypass Prisma type issues
-interface Document {
-    id: string;
-    title: string;
-    content: string;
-    userId: string;
-    createdAt: Date;
-    updatedAt: Date;
-}
+import { Document } from "@prisma/client"; // Import the type
 
 export default async function DocumentsPage() {
     const session = await auth();
@@ -24,7 +15,6 @@ export default async function DocumentsPage() {
 
     let documents: Document[] = [];
     try {
-        // @ts-ignore
         documents = await prisma.document.findMany({
             where: {
                 userId: session.user.id,
@@ -35,8 +25,6 @@ export default async function DocumentsPage() {
         });
     } catch (error) {
         console.error("Failed to fetch documents:", error);
-        // Return an empty list or a specific error state if needed
-        // For now, we'll just let it render as empty with a console error
     }
 
     return (

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import ReactMarkdown from "react-markdown"
 import { generateStudyNotesAction } from "./actions"
 
 export default function StudyNotesPage() {
@@ -52,15 +53,13 @@ export default function StudyNotesPage() {
             {notes && (
                 <div className="notes-result">
                     <h2>Study Notes</h2>
-                    <div className="notes-content">
-                        {notes.split('\n').map((line, i) => (
-                            <p key={i}>{line}</p>
-                        ))}
+                    <div className="notes-content markdown-content">
+                        <ReactMarkdown>{notes}</ReactMarkdown>
                     </div>
                 </div>
             )}
 
-            <p style={{ marginTop: "2rem", color: "#666", fontSize: "0.8rem" }}>v1.7</p>
+            <p style={{ marginTop: "2rem", color: "#666", fontSize: "0.8rem" }}>v1.7 (Enhanced UI)</p>
         </div>
     )
 }

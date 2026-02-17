@@ -2,6 +2,9 @@
 
 import OpenAI from "openai"
 import { z } from "zod"
+import YtDlpWrap from 'yt-dlp-exec';
+import fs from 'fs';
+import path from 'path';
 
 const generateStudyNotesSchema = z.object({
     videoUrl: z.string().url({ message: "Please enter a valid URL" }),
@@ -22,138 +25,111 @@ function extractVideoId(url: string): string | null {
     return null
 }
 
-// Parse transcript XML - supports both <text> and <p><s> formats
-function parseTranscriptXml(xml: string): string {
-    let transcript = ""
+// Production: Call Python Serverless Function
+async function startVercelPythonTranscript(videoUrl: string): Promise<string | null> {
+    console.log(`[Study Notes] Calling Python API for ${videoUrl}`);
+    try {
+        // Construct full URL. VERCEL_URL is provided by Vercel
+        // If testing locally with 'vercel dev', it might be localhost:3000
+        const host = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+        const apiUrl = `${host}/api/py-transcript?url=${encodeURIComponent(videoUrl)}`;
 
-    // Format 1: <text start="..." dur="...">content</text>
-    const textMatches = xml.matchAll(/<text[^>]*>(.*?)<\/text>/g)
-    for (const match of textMatches) {
-        transcript += match[1] + " "
-    }
-
-    // Format 2: <p><s>content</s></p> (used by Android client)
-    if (!transcript.trim()) {
-        const segMatches = xml.matchAll(/<s[^>]*>(.*?)<\/s>/g)
-        for (const match of segMatches) {
-            if (match[1].trim()) {
-                transcript += match[1] + " "
+        console.log(`[Study Notes] Fetching ${apiUrl}`);
+        const response = await fetch(apiUrl, {
+            method: 'GET',
+            cache: 'no-store',
+            headers: {
+                // Optional: Add a secret if you want to protect this endpoint
             }
+        });
+
+        if (!response.ok) {
+            console.error(`[Study Notes] Python API failed: ${response.status} ${response.statusText}`);
+            const errorText = await response.text();
+            console.error(`[Study Notes] Error details: ${errorText}`);
+            return null;
         }
-    }
 
-    return transcript
-        .replace(/&amp;/g, "&")
-        .replace(/&#39;/g, "'")
-        .replace(/&quot;/g, '"')
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/\n/g, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-}
+        const data = await response.json();
+        return data.transcript || null;
 
-// Method 1: youtube-transcript library (fastest when it works)
-async function tryYoutubeTranscript(videoId: string): Promise<string | null> {
-    try {
-        const { YoutubeTranscript } = await import("youtube-transcript")
-        const items = await YoutubeTranscript.fetchTranscript(videoId)
-        if (!items || items.length === 0) return null
-        const text = items.map(item => item.text).join(" ").slice(0, 8000)
-        return text || null
-    } catch {
-        return null
+    } catch (e: any) {
+        console.error(`[Study Notes] Exception calling Python API: ${e.message}`);
+        return null;
     }
 }
 
-// Method 2: Android InnerTube API (most reliable - bypasses most restrictions)
-async function tryAndroidInnerTube(videoId: string): Promise<string | null> {
+// Development: Run yt-dlp locally via Node wrapper
+async function tryYtDlpLocal(url: string): Promise<string | null> {
+    console.log(`[Study Notes] Attempting local yt-dlp execution for ${url}`);
+
+    // Create a unique temporary file path for the transcript
+    const tempId = Math.random().toString(36).substring(7);
+    const tempDir = path.join(process.cwd(), 'tmp');
+    if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+    }
+    // Base filename without extension
+    const outputBase = `transcript-${tempId}`;
+    const outputPath = path.join(tempDir, outputBase);
+
     try {
-        const playerResponse = await fetch(
-            "https://www.youtube.com/youtubei/v1/player?key=AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w",
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "User-Agent": "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip",
-                    "X-YouTube-Client-Name": "3",
-                    "X-YouTube-Client-Version": "19.09.37",
-                },
-                body: JSON.stringify({
-                    videoId,
-                    context: {
-                        client: {
-                            clientName: "ANDROID",
-                            clientVersion: "19.09.37",
-                            androidSdkVersion: 34,
-                            hl: "en",
-                            gl: "US",
-                            userAgent: "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip",
-                        },
-                    },
-                    contentCheckOk: true,
-                    racyCheckOk: true,
-                }),
+        await YtDlpWrap(url, {
+            writeAutoSub: true,
+            writeSub: true, // Try manual subs too
+            skipDownload: true,
+            subLang: 'en,en-US,en-orig', // Prefer English
+            output: outputPath,
+            noWarnings: true,
+            noCheckCertificate: true,
+            // noCheckCertificate: true, // Duplicate key issue fixed in thought process, handled by exec
+        });
+
+        // Find the generated VTT file
+        const files = fs.readdirSync(tempDir);
+        // Look for files starting with our base name and ending in .vtt
+        const vttFile = files.find(f => f.startsWith(outputBase) && f.endsWith('.vtt'));
+
+        if (vttFile) {
+            const fullPath = path.join(tempDir, vttFile);
+            console.log(`[Study Notes] yt-dlp success. Reading file: ${vttFile}`);
+            const content = fs.readFileSync(fullPath, 'utf-8');
+
+            // Cleanup
+            try {
+                fs.unlinkSync(fullPath);
+            } catch (e) {
+                console.warn("Failed to cleanup temp file", e);
             }
-        )
 
-        const playerData = await playerResponse.json()
-        const captionTracks = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks
-
-        if (!captionTracks || captionTracks.length === 0) return null
-
-        const track = captionTracks.find((t: any) => t.languageCode === "en") || captionTracks[0]
-        if (!track?.baseUrl) return null
-
-        const transcriptResponse = await fetch(track.baseUrl, {
-            headers: {
-                "User-Agent": "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip",
-            },
-        })
-        const xml = await transcriptResponse.text()
-        if (!xml || xml.length === 0) return null
-
-        const transcript = parseTranscriptXml(xml)
-        return transcript.length > 0 ? transcript.slice(0, 8000) : null
-    } catch {
-        return null
+            return cleanVtt(content);
+        } else {
+            console.warn(`[Study Notes] yt-dlp did not create a VTT file. Checked in ${tempDir}`);
+            return null;
+        }
+    } catch (e: any) {
+        console.error(`[Study Notes] yt-dlp error: ${e.message}`);
     }
+    return null;
 }
 
-// Method 3: HTML scraping with cookie consent bypass
-async function tryHTMLScraping(videoId: string): Promise<string | null> {
-    try {
-        const pageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-            headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Cookie": "CONSENT=YES+1",
-            },
-        })
-        const html = await pageResponse.text()
+function cleanVtt(vttContent: string): string {
+    // Basic VTT cleanup
+    const lines = vttContent.split('\n');
+    const cleanedLines = lines.filter(line => {
+        // Filter out metadata, timestamps, and empty lines
+        return !line.startsWith('WEBVTT') &&
+            !line.startsWith('NOTE') &&
+            !line.includes('-->') &&
+            line.trim() !== '' &&
+            !/^\d+$/.test(line.trim()); // Filter out index numbers
+    });
 
-        const match = html.match(/"captionTracks":(\[.*?\])/)
-        if (!match) return null
-
-        const captionTracks = JSON.parse(match[1])
-        const track = captionTracks.find((t: any) => t.languageCode === "en") || captionTracks[0]
-        if (!track?.baseUrl) return null
-
-        // Fetch with Android user-agent (more reliable for getting caption content)
-        const transcriptResponse = await fetch(track.baseUrl, {
-            headers: {
-                "User-Agent": "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip",
-            },
-        })
-        const xml = await transcriptResponse.text()
-        if (!xml || xml.length === 0) return null
-
-        const transcript = parseTranscriptXml(xml)
-        return transcript.length > 0 ? transcript.slice(0, 8000) : null
-    } catch {
-        return null
-    }
+    // Remove duplicates (captions often repeat) and join
+    // Using a Set to remove exact duplicate lines
+    return [...new Set(cleanedLines)].join(' ').slice(0, 15000); // Increased limit as yt-dlp is accurate
 }
+
 
 export async function generateStudyNotesAction(formData: FormData) {
     const videoUrl = formData.get("videoUrl") as string
@@ -178,46 +154,35 @@ export async function generateStudyNotesAction(formData: FormData) {
         return { error: "Could not extract video ID. Please use a valid YouTube URL." }
     }
 
-    // 4. Try all transcript methods in order
-    console.log(`[Study Notes v1.7] Fetching transcript for: ${videoId}`)
+    // 4. Fetch Transcript via yt-dlp
+    // Use the provided URL directly if valid, or reconstruct it
+    console.log(`[Study Notes v2.1] Fetching transcript for: ${videoId} using yt-dlp`)
 
-    let transcript: string | null = null
-    let methodUsed = ""
+    let transcript: string | null = null;
+    const fullUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-    // Method 1: youtube-transcript library
-    console.log("[Study Notes] Method 1: youtube-transcript library...")
-    transcript = await tryYoutubeTranscript(videoId)
-    if (transcript) {
-        methodUsed = "youtube-transcript"
-        console.log(`[Study Notes] ✅ Method 1 succeeded (${transcript.length} chars)`)
-    }
+    // DETECT ENVIRONMENT
+    // Vercel sets NODE_ENV=production. local dev sets NODE_ENV=development
+    const isProduction = process.env.NODE_ENV === 'production';
 
-    // Method 2: Android InnerTube API (most reliable)
-    if (!transcript) {
-        console.log("[Study Notes] Method 2: Android InnerTube API...")
-        transcript = await tryAndroidInnerTube(videoId)
-        if (transcript) {
-            methodUsed = "android-innertube"
-            console.log(`[Study Notes] ✅ Method 2 succeeded (${transcript.length} chars)`)
+    try {
+        if (isProduction) {
+            transcript = await startVercelPythonTranscript(fullUrl);
+        } else {
+            transcript = await tryYtDlpLocal(fullUrl);
         }
-    }
-
-    // Method 3: HTML scraping
-    if (!transcript) {
-        console.log("[Study Notes] Method 3: HTML scraping fallback...")
-        transcript = await tryHTMLScraping(videoId)
-        if (transcript) {
-            methodUsed = "html-scraping"
-            console.log(`[Study Notes] ✅ Method 3 succeeded (${transcript.length} chars)`)
-        }
+    } catch (e) {
+        console.error("Critical error in tryYtDlp", e);
     }
 
     if (!transcript) {
-        console.log("[Study Notes] ❌ All methods failed")
+        console.log("[Study Notes] ❌ yt-dlp failed")
         return {
-            error: "Could not retrieve transcript for this video. This can happen if:\n• The video has no captions/subtitles\n• The video is age-restricted or private\n• YouTube is blocking automated access\n\nPlease try a different video with captions enabled."
+            error: "Could not retrieve transcript. Please ensure the video has English captions (auto-generated or manual)."
         }
     }
+
+    console.log(`[Study Notes] ✅ Transcript retrieved (${transcript.length} chars)`);
 
     // 5. Generate Notes with OpenAI
     try {
@@ -242,7 +207,7 @@ export async function generateStudyNotesAction(formData: FormData) {
         })
 
         const notes = response.choices[0].message.content
-        console.log(`[Study Notes] ✅ Notes generated via ${methodUsed}`)
+        console.log(`[Study Notes] ✅ Notes generated`)
         return { notes }
     } catch (error: any) {
         console.error("[Study Notes] OpenAI error:", error.message)
