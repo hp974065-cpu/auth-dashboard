@@ -84,8 +84,15 @@ export default async function DashboardPage() {
                             <p>Generate AI summaries from videos</p>
                         </div>
                     </Link>
+                    <Link href="/dashboard/documents" className="stat-card clickable">
+                        <div className="stat-icon">📄</div>
+                        <div className="stat-content">
+                            <h3>Document Q&A</h3>
+                            <p>Upload files and ask questions</p>
+                        </div>
+                    </Link>
                 </div>
-            </main>
-        </div>
+            </main >
+        </div >
     )
 }

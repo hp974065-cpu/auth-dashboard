@@ -21,5 +21,26 @@ model User {
   role       Role     @default(USER)
   isApproved Boolean  @default(false)
   createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  updatedAt  DateTime   @updatedAt
+  documents  Document[]
+}
+
+model Document {
+  id        String    @id @default(cuid())
+  title     String
+  content   String    @db.Text
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  content    String   @db.Text
+  role       String   // "user" or "assistant"
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
 }
