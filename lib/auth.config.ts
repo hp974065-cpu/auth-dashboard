@@ -8,7 +8,7 @@ export const authConfig: NextAuthConfig = {
     callbacks: {
         authorized({ auth, request: { nextUrl } }) {
             const isLoggedIn = !!auth?.user
-            const isPublicRoute = ["/", "/login", "/signup"].includes(nextUrl.pathname)
+            const isPublicRoute = ["/", "/login", "/signup", "/pending"].includes(nextUrl.pathname)
             const isAdminRoute = nextUrl.pathname.startsWith("/admin")
             const isApiRoute = nextUrl.pathname.startsWith("/api")
 

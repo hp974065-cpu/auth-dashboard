@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { signIn } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 
@@ -31,12 +32,28 @@ export default function SignupPage() {
                 return
             }
 
+            // Auto-login the user after successful signup
+            const loginResult = await signIn("credentials", {
+                email,
+                password,
+                redirect: false,
+            })
+
+            if (loginResult?.error) {
+                // Login failed but signup succeeded — redirect to login page
+                router.push("/login?registered=true")
+                return
+            }
+
             // Redirect based on approval status
             if (data.user.isApproved) {
-                router.push("/login?registered=true")
+                // First user (admin) — go to dashboard
+                router.push("/dashboard")
             } else {
+                // Regular user — go to pending
                 router.push("/pending")
             }
+            router.refresh()
         } catch {
             setError("Something went wrong")
         } finally {

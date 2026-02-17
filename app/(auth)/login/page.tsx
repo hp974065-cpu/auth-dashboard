@@ -27,7 +27,15 @@ export default function LoginPage() {
             if (result?.error) {
                 setError("Invalid email or password")
             } else {
-                router.push("/dashboard")
+                // Fetch session to check approval status
+                const sessionRes = await fetch("/api/auth/session")
+                const session = await sessionRes.json()
+
+                if (session?.user?.isApproved) {
+                    router.push("/dashboard")
+                } else {
+                    router.push("/pending")
+                }
                 router.refresh()
             }
         } catch {
