@@ -59,7 +59,7 @@ async function tryYoutubeTranscript(videoId: string): Promise<string | null> {
         const { YoutubeTranscript } = await import("youtube-transcript")
         const items = await YoutubeTranscript.fetchTranscript(videoId)
         if (!items || items.length === 0) return null
-        const text = items.map(item => item.text).join(" ").slice(0, 20000)
+        const text = items.map(item => item.text).join(" ").slice(0, 8000)
         return text || null
     } catch {
         return null
@@ -114,7 +114,7 @@ async function tryAndroidInnerTube(videoId: string): Promise<string | null> {
         if (!xml || xml.length === 0) return null
 
         const transcript = parseTranscriptXml(xml)
-        return transcript.length > 0 ? transcript.slice(0, 20000) : null
+        return transcript.length > 0 ? transcript.slice(0, 8000) : null
     } catch {
         return null
     }
@@ -149,7 +149,7 @@ async function tryHTMLScraping(videoId: string): Promise<string | null> {
         if (!xml || xml.length === 0) return null
 
         const transcript = parseTranscriptXml(xml)
-        return transcript.length > 0 ? transcript.slice(0, 20000) : null
+        return transcript.length > 0 ? transcript.slice(0, 8000) : null
     } catch {
         return null
     }
@@ -228,14 +228,15 @@ export async function generateStudyNotesAction(formData: FormData) {
 
         const response = await openai.chat.completions.create({
             model: "gpt-4o",
+            max_tokens: 2000,
             messages: [
                 {
                     role: "system",
-                    content: "You are a helpful AI tutor. Your goal is to create clean, structured study notes from video transcripts. Use Markdown formatting: headers, bold concepts, bullet points. Keep it concise but comprehensive.",
+                    content: "You are a helpful AI tutor. Create concise, structured study notes from this video transcript. Use Markdown: headers, bold concepts, bullet points.",
                 },
                 {
                     role: "user",
-                    content: `Here is the transcript of a video. Please summarize it into study notes:\n\n${transcript}`,
+                    content: `Summarize into study notes:\n\n${transcript}`,
                 },
             ],
         })
