@@ -60,7 +60,7 @@ export default function StudyNotesPage() {
                 </div>
             )}
 
-            <p style={{ marginTop: "2rem", color: "#666", fontSize: "0.8rem" }}>v1.5</p>
+            <p style={{ marginTop: "2rem", color: "#666", fontSize: "0.8rem" }}>v1.6</p>
         </div>
     )
 }

@@ -23,6 +23,30 @@ function extractVideoId(url: string): string | null {
     return null
 }
 
+// Decode escaped unicode characters in URLs (e.g. \u0026 -> &)
+function decodeUrl(url: string): string {
+    return url
+        .replace(/\\u0026/g, "&")
+        .replace(/&amp;/g, "&")
+}
+
+// Parse XML transcript to text
+function parseTranscriptXml(xml: string): string {
+    const textMatches = xml.matchAll(/<text[^>]*>(.*?)<\/text>/g)
+    let transcript = ""
+    for (const match of textMatches) {
+        transcript += match[1] + " "
+    }
+    return transcript
+        .replace(/&amp;/g, "&")
+        .replace(/&#39;/g, "'")
+        .replace(/&quot;/g, '"')
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/\n/g, " ")
+        .trim()
+}
+
 // Method 1: youtube-transcript library
 async function tryYoutubeTranscript(videoId: string): Promise<string | null> {
     try {
@@ -35,13 +59,15 @@ async function tryYoutubeTranscript(videoId: string): Promise<string | null> {
     }
 }
 
-// Method 2: YouTube InnerTube API (bypasses some restrictions)
+// Method 2: YouTube InnerTube API
 async function tryInnerTubeAPI(videoId: string): Promise<string | null> {
     try {
-        // Step 1: Get player data via InnerTube API
         const playerResponse = await fetch("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            },
             body: JSON.stringify({
                 videoId: videoId,
                 context: {
@@ -59,30 +85,19 @@ async function tryInnerTubeAPI(videoId: string): Promise<string | null> {
 
         if (!captionTracks || captionTracks.length === 0) return null
 
-        // Prefer English
         const track = captionTracks.find((t: any) => t.languageCode === "en") || captionTracks[0]
         if (!track?.baseUrl) return null
 
-        // Step 2: Fetch the transcript XML
-        const transcriptResponse = await fetch(track.baseUrl)
+        // Decode URL in case of escaped characters
+        const url = decodeUrl(track.baseUrl)
+
+        const transcriptResponse = await fetch(url, {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            },
+        })
         const xml = await transcriptResponse.text()
-
-        // Step 3: Parse XML to extract text
-        const textMatches = xml.matchAll(/<text[^>]*>(.*?)<\/text>/g)
-        let transcript = ""
-        for (const match of textMatches) {
-            transcript += match[1] + " "
-        }
-
-        // Decode HTML entities
-        transcript = transcript
-            .replace(/&amp;/g, "&")
-            .replace(/&#39;/g, "'")
-            .replace(/&quot;/g, '"')
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/\n/g, " ")
-            .trim()
+        const transcript = parseTranscriptXml(xml)
 
         return transcript.length > 0 ? transcript.slice(0, 20000) : null
     } catch {
@@ -90,7 +105,7 @@ async function tryInnerTubeAPI(videoId: string): Promise<string | null> {
     }
 }
 
-// Method 3: HTML scraping (original fallback)
+// Method 3: HTML scraping with URL decoding and fmt=json3 fallback
 async function tryHTMLScraping(videoId: string): Promise<string | null> {
     try {
         const pageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
@@ -105,27 +120,46 @@ async function tryHTMLScraping(videoId: string): Promise<string | null> {
         const match = html.match(/"captionTracks":(\[.*?\])/)
         if (!match) return null
 
-        const captionTracks = JSON.parse(match[1])
+        // Parse the JSON — handle escaped unicode in the raw match
+        const rawJson = match[1].replace(/\\u0026/g, "&")
+        const captionTracks = JSON.parse(rawJson)
         const track = captionTracks.find((t: any) => t.languageCode === "en") || captionTracks[0]
         if (!track?.baseUrl) return null
 
-        const transcriptResponse = await fetch(track.baseUrl)
+        // Ensure URL is properly decoded
+        const captionUrl = decodeUrl(track.baseUrl)
+
+        // Try XML format first
+        const transcriptResponse = await fetch(captionUrl, {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            },
+        })
         const xml = await transcriptResponse.text()
+        let transcript = parseTranscriptXml(xml)
 
-        const textMatches = xml.matchAll(/<text[^>]*>(.*?)<\/text>/g)
-        let transcript = ""
-        for (const match of textMatches) {
-            transcript += match[1] + " "
+        // If XML parsing returned nothing, try JSON3 format
+        if (!transcript) {
+            const json3Url = captionUrl + (captionUrl.includes("?") ? "&" : "?") + "fmt=json3"
+            const json3Response = await fetch(json3Url, {
+                headers: {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                },
+            })
+            const json3Text = await json3Response.text()
+
+            try {
+                const json3Data = JSON.parse(json3Text)
+                const events = json3Data?.events || []
+                transcript = events
+                    .filter((e: any) => e.segs)
+                    .map((e: any) => e.segs.map((s: any) => s.utf8).join(""))
+                    .join(" ")
+                    .trim()
+            } catch {
+                // JSON3 parsing failed, transcript stays empty
+            }
         }
-
-        transcript = transcript
-            .replace(/&amp;/g, "&")
-            .replace(/&#39;/g, "'")
-            .replace(/&quot;/g, '"')
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/\n/g, " ")
-            .trim()
 
         return transcript.length > 0 ? transcript.slice(0, 20000) : null
     } catch {
@@ -180,7 +214,7 @@ export async function generateStudyNotesAction(formData: FormData) {
         }
     }
 
-    // Method 3: HTML scraping
+    // Method 3: HTML scraping with JSON3 fallback
     if (!transcript) {
         console.log("[Study Notes] Method 3: HTML scraping...")
         transcript = await tryHTMLScraping(videoId)
