@@ -1,6 +1,5 @@
 "use server"
 
-import { YoutubeTranscript } from "youtube-transcript"
 import OpenAI from "openai"
 import { z } from "zod"
 
@@ -23,20 +22,26 @@ function extractVideoId(url: string): string | null {
     return null
 }
 
-// Decode escaped unicode characters in URLs (e.g. \u0026 -> &)
-function decodeUrl(url: string): string {
-    return url
-        .replace(/\\u0026/g, "&")
-        .replace(/&amp;/g, "&")
-}
-
-// Parse XML transcript to text
+// Parse transcript XML - supports both <text> and <p><s> formats
 function parseTranscriptXml(xml: string): string {
-    const textMatches = xml.matchAll(/<text[^>]*>(.*?)<\/text>/g)
     let transcript = ""
+
+    // Format 1: <text start="..." dur="...">content</text>
+    const textMatches = xml.matchAll(/<text[^>]*>(.*?)<\/text>/g)
     for (const match of textMatches) {
         transcript += match[1] + " "
     }
+
+    // Format 2: <p><s>content</s></p> (used by Android client)
+    if (!transcript.trim()) {
+        const segMatches = xml.matchAll(/<s[^>]*>(.*?)<\/s>/g)
+        for (const match of segMatches) {
+            if (match[1].trim()) {
+                transcript += match[1] + " "
+            }
+        }
+    }
+
     return transcript
         .replace(/&amp;/g, "&")
         .replace(/&#39;/g, "'")
@@ -44,12 +49,14 @@ function parseTranscriptXml(xml: string): string {
         .replace(/&lt;/g, "<")
         .replace(/&gt;/g, ">")
         .replace(/\n/g, " ")
+        .replace(/\s+/g, " ")
         .trim()
 }
 
-// Method 1: youtube-transcript library
+// Method 1: youtube-transcript library (fastest when it works)
 async function tryYoutubeTranscript(videoId: string): Promise<string | null> {
     try {
+        const { YoutubeTranscript } = await import("youtube-transcript")
         const items = await YoutubeTranscript.fetchTranscript(videoId)
         if (!items || items.length === 0) return null
         const text = items.map(item => item.text).join(" ").slice(0, 20000)
@@ -59,26 +66,36 @@ async function tryYoutubeTranscript(videoId: string): Promise<string | null> {
     }
 }
 
-// Method 2: YouTube InnerTube API
-async function tryInnerTubeAPI(videoId: string): Promise<string | null> {
+// Method 2: Android InnerTube API (most reliable - bypasses most restrictions)
+async function tryAndroidInnerTube(videoId: string): Promise<string | null> {
     try {
-        const playerResponse = await fetch("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            },
-            body: JSON.stringify({
-                videoId: videoId,
-                context: {
-                    client: {
-                        clientName: "WEB",
-                        clientVersion: "2.20240101.00.00",
-                        hl: "en",
-                    },
+        const playerResponse = await fetch(
+            "https://www.youtube.com/youtubei/v1/player?key=AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "User-Agent": "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip",
+                    "X-YouTube-Client-Name": "3",
+                    "X-YouTube-Client-Version": "19.09.37",
                 },
-            }),
-        })
+                body: JSON.stringify({
+                    videoId,
+                    context: {
+                        client: {
+                            clientName: "ANDROID",
+                            clientVersion: "19.09.37",
+                            androidSdkVersion: 34,
+                            hl: "en",
+                            gl: "US",
+                            userAgent: "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip",
+                        },
+                    },
+                    contentCheckOk: true,
+                    racyCheckOk: true,
+                }),
+            }
+        )
 
         const playerData = await playerResponse.json()
         const captionTracks = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks
@@ -88,24 +105,22 @@ async function tryInnerTubeAPI(videoId: string): Promise<string | null> {
         const track = captionTracks.find((t: any) => t.languageCode === "en") || captionTracks[0]
         if (!track?.baseUrl) return null
 
-        // Decode URL in case of escaped characters
-        const url = decodeUrl(track.baseUrl)
-
-        const transcriptResponse = await fetch(url, {
+        const transcriptResponse = await fetch(track.baseUrl, {
             headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "User-Agent": "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip",
             },
         })
         const xml = await transcriptResponse.text()
-        const transcript = parseTranscriptXml(xml)
+        if (!xml || xml.length === 0) return null
 
+        const transcript = parseTranscriptXml(xml)
         return transcript.length > 0 ? transcript.slice(0, 20000) : null
     } catch {
         return null
     }
 }
 
-// Method 3: HTML scraping with URL decoding and fmt=json3 fallback
+// Method 3: HTML scraping with cookie consent bypass
 async function tryHTMLScraping(videoId: string): Promise<string | null> {
     try {
         const pageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
@@ -120,47 +135,20 @@ async function tryHTMLScraping(videoId: string): Promise<string | null> {
         const match = html.match(/"captionTracks":(\[.*?\])/)
         if (!match) return null
 
-        // Parse the JSON — handle escaped unicode in the raw match
-        const rawJson = match[1].replace(/\\u0026/g, "&")
-        const captionTracks = JSON.parse(rawJson)
+        const captionTracks = JSON.parse(match[1])
         const track = captionTracks.find((t: any) => t.languageCode === "en") || captionTracks[0]
         if (!track?.baseUrl) return null
 
-        // Ensure URL is properly decoded
-        const captionUrl = decodeUrl(track.baseUrl)
-
-        // Try XML format first
-        const transcriptResponse = await fetch(captionUrl, {
+        // Fetch with Android user-agent (more reliable for getting caption content)
+        const transcriptResponse = await fetch(track.baseUrl, {
             headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "User-Agent": "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip",
             },
         })
         const xml = await transcriptResponse.text()
-        let transcript = parseTranscriptXml(xml)
+        if (!xml || xml.length === 0) return null
 
-        // If XML parsing returned nothing, try JSON3 format
-        if (!transcript) {
-            const json3Url = captionUrl + (captionUrl.includes("?") ? "&" : "?") + "fmt=json3"
-            const json3Response = await fetch(json3Url, {
-                headers: {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                },
-            })
-            const json3Text = await json3Response.text()
-
-            try {
-                const json3Data = JSON.parse(json3Text)
-                const events = json3Data?.events || []
-                transcript = events
-                    .filter((e: any) => e.segs)
-                    .map((e: any) => e.segs.map((s: any) => s.utf8).join(""))
-                    .join(" ")
-                    .trim()
-            } catch {
-                // JSON3 parsing failed, transcript stays empty
-            }
-        }
-
+        const transcript = parseTranscriptXml(xml)
         return transcript.length > 0 ? transcript.slice(0, 20000) : null
     } catch {
         return null
@@ -191,7 +179,7 @@ export async function generateStudyNotesAction(formData: FormData) {
     }
 
     // 4. Try all transcript methods in order
-    console.log(`[Study Notes] Trying transcript for video: ${videoId}`)
+    console.log(`[Study Notes v1.7] Fetching transcript for: ${videoId}`)
 
     let transcript: string | null = null
     let methodUsed = ""
@@ -204,19 +192,19 @@ export async function generateStudyNotesAction(formData: FormData) {
         console.log(`[Study Notes] ✅ Method 1 succeeded (${transcript.length} chars)`)
     }
 
-    // Method 2: InnerTube API
+    // Method 2: Android InnerTube API (most reliable)
     if (!transcript) {
-        console.log("[Study Notes] Method 2: InnerTube API...")
-        transcript = await tryInnerTubeAPI(videoId)
+        console.log("[Study Notes] Method 2: Android InnerTube API...")
+        transcript = await tryAndroidInnerTube(videoId)
         if (transcript) {
-            methodUsed = "innertube-api"
+            methodUsed = "android-innertube"
             console.log(`[Study Notes] ✅ Method 2 succeeded (${transcript.length} chars)`)
         }
     }
 
-    // Method 3: HTML scraping with JSON3 fallback
+    // Method 3: HTML scraping
     if (!transcript) {
-        console.log("[Study Notes] Method 3: HTML scraping...")
+        console.log("[Study Notes] Method 3: HTML scraping fallback...")
         transcript = await tryHTMLScraping(videoId)
         if (transcript) {
             methodUsed = "html-scraping"
@@ -225,6 +213,7 @@ export async function generateStudyNotesAction(formData: FormData) {
     }
 
     if (!transcript) {
+        console.log("[Study Notes] ❌ All methods failed")
         return {
             error: "Could not retrieve transcript for this video. This can happen if:\n• The video has no captions/subtitles\n• The video is age-restricted or private\n• YouTube is blocking automated access\n\nPlease try a different video with captions enabled."
         }
