@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
@@ -21,8 +22,10 @@
     "next": "16.1.6",
     "next-auth": "^5.0.0-beta.30",
     "openai": "^6.22.0",
+    "patch-package": "^8.0.1",
     "pdf-parse": "^1.1.1",
     "pg": "^8.18.0",
+    "postinstall-postinstall": "^2.1.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-markdown": "^10.1.0",
