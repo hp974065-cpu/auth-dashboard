@@ -13,34 +13,51 @@ enum Role {
   USER
 }
 
+
 model User {
-  id         String   @id @default(cuid())
-  email      String   @unique
+  id         String      @id @default(cuid())
+  email      String      @unique
   password   String
   name       String
-  role       Role     @default(USER)
-  isApproved Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime   @updatedAt
+  role       Role        @default(USER)
+  isApproved Boolean     @default(false)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
   documents  Document[]
+  workspaces Workspace[]
+}
+
+model Workspace {
+  id        String     @id @default(cuid())
+  title     String
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents Document[]
+  messages  Message[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 }
 
 model Document {
-  id        String    @id @default(cuid())
-  title     String
-  content   String    @db.Text
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages  Message[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id          String     @id @default(cuid())
+  title       String
+  content     String     @db.Text
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  messages    Message[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 }
 
 model Message {
   id         String   @id @default(cuid())
   content    String   @db.Text
   role       String   // "user" or "assistant"
-  documentId String
-  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId String?
+  document   Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   createdAt  DateTime @default(now())
 }

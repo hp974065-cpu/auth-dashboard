@@ -18,6 +18,8 @@ export async function POST(req: NextRequest) {
         const formData = await req.formData();
         const file = formData.get("file") as File;
 
+        const workspaceId = formData.get("workspaceId") as string | null;
+
         if (!file) {
             console.log("No file provided");
             return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
@@ -49,25 +51,26 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Basic clean up of text
-        textContent = textContent.replace(/\s+/g, ' ').trim();
-
-        console.log("Saving to database...");
         const document = await prisma.document.create({
             data: {
                 title: file.name,
                 content: textContent,
-                userId: session.user.id!,
+                userId: session.user.id,
+                workspaceId: workspaceId || undefined,
             },
         });
+
         console.log("Document saved:", document.id);
 
-        return NextResponse.json({ document }, { status: 201 });
-    } catch (error: any) {
-        console.error("Upload error (unhandled):", error);
+        return NextResponse.json(document);
+    } catch (error) {
+        console.error("Upload error:", error);
         return NextResponse.json(
-            { error: "Internal Server Error: " + error.message },
+            { error: "Internal Server Error" },
             { status: 500 }
         );
     }
 }
+
+// Basic clean up of text
+
