@@ -17,10 +17,6 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        console.log("OpenRouter Key Present:", !!process.env.OPENROUTER_API_KEY);
-        console.log("Firecrawl Key Present:", !!process.env.FIRECRAWL_API_KEY);
-        console.log("OpenRouter Key Start:", process.env.OPENROUTER_API_KEY?.substring(0, 10));
-
         const body = await req.json();
         const { question, documentId, workspaceId, useDeepSearch } = body;
 
