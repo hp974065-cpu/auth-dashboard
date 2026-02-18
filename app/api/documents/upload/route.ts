@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { recursiveCharacterTextSplitter } from "@/lib/chunking";
-import { openai } from "@/lib/openai";
+import { getOpenAIClient } from "@/lib/openai";
 
 export const runtime = 'nodejs'; // Force Node.js runtime
 
@@ -35,9 +35,11 @@ export async function POST(req: NextRequest) {
 
         if (file.type === "application/pdf") {
             try {
-                console.log("Parsing PDF...");
+                console.log("Parsing PDF... attempting require");
                 // @ts-ignore
-                const pdf = (await import("pdf-parse/lib/pdf-parse")).default;
+                const pdf = require("pdf-parse/lib/pdf-parse");
+                console.log("PDF module required:", typeof pdf);
+
                 const data = await pdf(buffer);
                 textContent = data.text;
                 console.log("PDF parsed successfully. Length:", textContent.length);
@@ -77,6 +79,7 @@ export async function POST(req: NextRequest) {
         for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
             const batch = chunks.slice(i, i + BATCH_SIZE);
 
+            const openai = getOpenAIClient();
             const embeddingResponse = await openai.embeddings.create({
                 model: "text-embedding-3-small",
                 input: batch,

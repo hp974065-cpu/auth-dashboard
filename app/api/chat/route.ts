@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { openai } from "@/lib/openai";
+import { getOpenAIClient } from "@/lib/openai";
 import { cosineSimilarity } from "@/lib/vector";
 import FirecrawlApp from '@mendable/firecrawl-js';
 
@@ -16,6 +16,10 @@ export async function POST(req: NextRequest) {
         if (!session || !session.user) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
+
+        console.log("OpenRouter Key Present:", !!process.env.OPENROUTER_API_KEY);
+        console.log("Firecrawl Key Present:", !!process.env.FIRECRAWL_API_KEY);
+        console.log("OpenRouter Key Start:", process.env.OPENROUTER_API_KEY?.substring(0, 10));
 
         const body = await req.json();
         const { question, documentId, workspaceId, useDeepSearch } = body;
@@ -33,6 +37,7 @@ export async function POST(req: NextRequest) {
         // 1. Retrieve Relevant Context
         if (workspaceId) {
             // Generate embedding for the question
+            const openai = getOpenAIClient();
             const embeddingResponse = await openai.embeddings.create({
                 model: "text-embedding-3-small",
                 input: question,
@@ -149,6 +154,7 @@ ${useDeepSearch ? `CONTEXT FROM WEB SEARCH:\n${webContext}\n` : ""}
 
 USER QUESTION: ${question}`;
 
+        const openai = getOpenAIClient();
         const response = await openai.chat.completions.create({
             model: "google/gemini-2.0-flash-001",
             messages: [
