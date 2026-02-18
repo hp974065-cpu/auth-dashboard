@@ -42,19 +42,22 @@ export async function POST(req: NextRequest) {
 
             // Fetch all chunks for the workspace (In-memory vector search)
             // Note: For large workspaces, we would use pgvector or a vector DB.
+            // Fetch all chunks for the workspace (In-memory vector search)
+            // Note: For large workspaces, we would use pgvector or a vector DB.
+            // @ts-ignore
             const chunks = await prisma.documentChunk.findMany({
                 where: { workspaceId },
                 include: { document: true },
             });
 
             // Calculate similarity
-            const scoredChunks = chunks.map(chunk => ({
+            const scoredChunks = chunks.map((chunk: any) => ({
                 ...chunk,
                 score: cosineSimilarity(questionEmbedding, chunk.embedding)
             }));
 
             // Sort by score descending
-            scoredChunks.sort((a, b) => b.score - a.score);
+            scoredChunks.sort((a: any, b: any) => b.score - a.score);
 
             // Take top 5 chunks
             const topChunks = scoredChunks.slice(0, 5);
@@ -67,7 +70,7 @@ export async function POST(req: NextRequest) {
             console.log(`Top chunk score: ${bestScore}`);
 
             if (bestScore > TOP_SCORE_THRESHOLD) {
-                context = topChunks.map((chunk, idx) =>
+                context = topChunks.map((chunk: any, idx: number) =>
                     `[${idx + 1}] Document: ${chunk.document.title}\n${chunk.content}`
                 ).join("\n\n");
 
@@ -137,12 +140,19 @@ export async function POST(req: NextRequest) {
         });
 
         // 4. Generate AI Response
-        const systemPrompt = `You are an intelligent assistant. 
-You have access to the following context from the user's documents and potentially the web.
-Answer the user's question based ONLY on the provided context. 
-If the answer is in the documents, cite the document title like [Document Title].
-If the answer is from the web, cite the source URL or title.
-If the answer is not in the context, say so.`;
+        const systemPrompt = `You are an AI research assistant.
+Use the provided workspace documents and web context to answer the question.
+Always cite sources using the format [1], [2], etc. matching the provided numbers.
+At the end of your response, list the unique sources you used in the format:
+Sources:
+[1] Document Name (or URL)
+[2] Document Name (or URL)
+
+If information comes from:
+- uploaded documents → show document name
+- web pages → show URL
+
+If the answer cannot be found in the context, say "I could not find the answer in the provided documents or web search results."`;
 
         const fullPrompt = `CONTEXT FROM DOCUMENTS:\n${context}
 
