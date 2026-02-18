@@ -5,6 +5,7 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
 
+  serverExternalPackages: ["pdf-parse", "@mendable/firecrawl-js"],
 };
 
 export default nextConfig;

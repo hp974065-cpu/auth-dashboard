@@ -1,15 +1,14 @@
-
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import OpenAI from "openai";
+import { openai } from "@/lib/openai";
+import { cosineSimilarity } from "@/lib/vector";
 import FirecrawlApp from '@mendable/firecrawl-js';
 
 // Initialize OpenAI client with OpenRouter API key and base URL
-const openai = new OpenAI({
-    apiKey: process.env.OPENROUTER_API_KEY,
-    baseURL: "https://openrouter.ai/api/v1",
-});
+// Moved to lib/openai.ts
+
+export const runtime = 'nodejs'; // Force Node.js runtime
 
 export async function POST(req: NextRequest) {
     try {
@@ -31,22 +30,58 @@ export async function POST(req: NextRequest) {
         let context = "";
         let contextSource = "";
 
-        // 1. Fetch Document Context
+        // 1. Retrieve Relevant Context
         if (workspaceId) {
-            const workspace = await prisma.workspace.findUnique({
-                where: { id: workspaceId },
-                include: { documents: true },
+            // Generate embedding for the question
+            const embeddingResponse = await openai.embeddings.create({
+                model: "text-embedding-3-small",
+                input: question,
+            });
+            const questionEmbedding = embeddingResponse.data[0].embedding;
+
+            // Fetch all chunks for the workspace (In-memory vector search)
+            // Note: For large workspaces, we would use pgvector or a vector DB.
+            const chunks = await prisma.documentChunk.findMany({
+                where: { workspaceId },
+                include: { document: true },
             });
 
-            if (!workspace) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
-            if (workspace.userId !== session.user.id) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+            // Calculate similarity
+            const scoredChunks = chunks.map(chunk => ({
+                ...chunk,
+                score: cosineSimilarity(questionEmbedding, chunk.embedding)
+            }));
 
-            // Combine content from all documents
-            // Limit total context to ~25k chars to be safe with Llama 3.1 8b headers
-            // A smarter approach would be RAG, but context stuffing detailed here.
-            context = workspace.documents.map(doc => `--- DOCUMENT: ${doc.title} ---\n${doc.content.slice(0, 5000)}`).join("\n\n");
-            contextSource = `Workspace: ${workspace.title}`;
+            // Sort by score descending
+            scoredChunks.sort((a, b) => b.score - a.score);
+
+            // Take top 5 chunks
+            const topChunks = scoredChunks.slice(0, 5);
+
+            // Filter out low relevance if needed, but for now just take top 5
+            // If top score is very low, we might trigger web search
+            const TOP_SCORE_THRESHOLD = 0.4;
+            const bestScore = topChunks.length > 0 ? topChunks[0].score : 0;
+
+            console.log(`Top chunk score: ${bestScore}`);
+
+            if (bestScore > TOP_SCORE_THRESHOLD) {
+                context = topChunks.map((chunk, idx) =>
+                    `[${idx + 1}] Document: ${chunk.document.title}\n${chunk.content}`
+                ).join("\n\n");
+
+                contextSource = "Workspace Documents";
+            } else {
+                console.log("Documents insufficient, enabling web search fallback.");
+                // If document relevance is low, force web search if not already enabled
+                if (!useDeepSearch) {
+                    // modifying the flag effectively for the logic below
+                    // (though we need to handle the variable scope)
+                    // We will set a flag to force web search
+                }
+            }
         } else if (documentId) {
+            // Legacy single document mode (or can use chunks too if we want)
             const document = await prisma.document.findUnique({
                 where: { id: documentId },
             });
@@ -59,22 +94,30 @@ export async function POST(req: NextRequest) {
         }
 
         // 2. Fetch Web Context (Deep Search)
+        // Trigger if useDeepSearch is TRUE OR if context is empty/low relevance
         let webContext = "";
-        if (useDeepSearch && process.env.FIRECRAWL_API_KEY) {
+        const shouldSearchWeb = useDeepSearch || (!context && process.env.FIRECRAWL_API_KEY);
+
+        if (shouldSearchWeb && process.env.FIRECRAWL_API_KEY) {
             try {
+                console.log("Starting Firecrawl web search...");
                 const app = new FirecrawlApp({ apiKey: process.env.FIRECRAWL_API_KEY });
 
-                // Search utilizing the web-scraper to get content
                 const searchResponse = await app.search(question, {
                     scrapeOptions: {
                         formats: ['markdown']
-                    }
+                    },
+                    limit: 3
                 });
 
-                if (searchResponse && searchResponse.web) {
-                    webContext = searchResponse.web.map((result: any) =>
-                        `--- WEB RESULT: ${result.title} (${result.url}) ---\n${result.markdown || result.description || "No content available"}`
-                    ).join("\n\n");
+                if (searchResponse) {
+                    // @ts-ignore
+                    const results = searchResponse.data || searchResponse.web || [];
+                    if (results.length > 0) {
+                        webContext = results.map((result: any) =>
+                            `[Source: ${result.url}] ${result.title}\n${result.markdown || result.description || "No content"}`
+                        ).join("\n\n");
+                    }
                 }
             } catch (err) {
                 console.warn("Firecrawl search failed:", err);

@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export default function UploadForm() {
+export default function UploadForm({ workspaceId }: { workspaceId?: string }) {
     const [file, setFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -25,6 +25,9 @@ export default function UploadForm() {
 
         const formData = new FormData();
         formData.append("file", file);
+        if (workspaceId) {
+            formData.append("workspaceId", workspaceId);
+        }
 
         try {
             const res = await fetch("/api/documents/upload", {

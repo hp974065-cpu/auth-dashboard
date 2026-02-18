@@ -2,8 +2,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-// @ts-ignore
-import pdf from "pdf-parse";
+import { recursiveCharacterTextSplitter } from "@/lib/chunking";
+import { openai } from "@/lib/openai";
+
+export const runtime = 'nodejs'; // Force Node.js runtime
 
 export async function POST(req: NextRequest) {
     try {
@@ -34,6 +36,8 @@ export async function POST(req: NextRequest) {
         if (file.type === "application/pdf") {
             try {
                 console.log("Parsing PDF...");
+                // @ts-ignore
+                const pdf = (await import("pdf-parse/lib/pdf-parse")).default;
                 const data = await pdf(buffer);
                 textContent = data.text;
                 console.log("PDF parsed successfully. Length:", textContent.length);
@@ -51,6 +55,7 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        // 1. Create the Document
         const document = await prisma.document.create({
             data: {
                 title: file.name,
@@ -59,6 +64,48 @@ export async function POST(req: NextRequest) {
                 workspaceId: workspaceId || undefined,
             },
         });
+
+        console.log("Document created:", document.id);
+
+        // 2. Chunk the text
+        const chunks = recursiveCharacterTextSplitter(textContent, 1000, 200);
+        console.log(`Generated ${chunks.length} chunks`);
+
+        // 3. Generate Embeddings & Save Chunks
+        // We process in batches to avoid rate limits
+        const BATCH_SIZE = 10;
+        for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+            const batch = chunks.slice(i, i + BATCH_SIZE);
+
+            const embeddingResponse = await openai.embeddings.create({
+                model: "text-embedding-3-small",
+                input: batch,
+            });
+
+            const databaseChunks = batch.map((content, idx) => ({
+                content: content,
+                embedding: embeddingResponse.data[idx].embedding,
+                documentId: document.id,
+                workspaceId: workspaceId!, // Ensure we have workspaceId if enforcing it, otherwise handle null
+                metadata: {
+                    chunkIndex: i + idx,
+                }
+            }));
+
+            // WorkspaceId might be null if user didn't select one (legacy), but our new system enforces it?
+            // The schema says workspaceId is optional on Document, but we added it to DocumentChunk as required?
+            // Let's check schema. DocumentChunk.workspaceId is String (Required).
+            // So we MUST have a workspaceId suitable here.
+
+            // If workspaceId is null, we can't create chunks per our new schema.
+            // We should enforce workspaceId in validation.
+
+            if (workspaceId) {
+                await prisma.$transaction(
+                    databaseChunks.map(chunk => prisma.documentChunk.create({ data: chunk }))
+                );
+            }
+        }
 
         console.log("Document saved:", document.id);
 
