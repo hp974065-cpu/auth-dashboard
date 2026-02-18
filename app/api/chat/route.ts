@@ -5,10 +5,10 @@ import { prisma } from "@/lib/prisma";
 import OpenAI from "openai";
 import FirecrawlApp from '@mendable/firecrawl-js';
 
-// Initialize OpenAI client with Groq API key and base URL
-const groq = new OpenAI({
-    apiKey: process.env.GROQ_API_KEY,
-    baseURL: "https://api.groq.com/openai/v1",
+// Initialize OpenAI client with OpenRouter API key and base URL
+const openai = new OpenAI({
+    apiKey: process.env.OPENROUTER_API_KEY,
+    baseURL: "https://openrouter.ai/api/v1",
 });
 
 export async function POST(req: NextRequest) {
@@ -106,8 +106,8 @@ ${useDeepSearch ? `CONTEXT FROM WEB SEARCH:\n${webContext}\n` : ""}
 
 USER QUESTION: ${question}`;
 
-        const response = await groq.chat.completions.create({
-            model: "llama-3.1-8b-instant",
+        const response = await openai.chat.completions.create({
+            model: "google/gemini-2.0-flash-001",
             messages: [
                 { role: "system", content: systemPrompt },
                 { role: "user", content: fullPrompt }

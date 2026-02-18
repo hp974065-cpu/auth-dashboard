@@ -175,11 +175,11 @@ export async function generateStudyNotesAction(formData: FormData) {
     }
 
     // 2. Check OpenAI Key
-    const apiKey = process.env.OPENAI_API_KEY
-    const baseURL = process.env.OPENAI_BASE_URL
+    const apiKey = process.env.OPENROUTER_API_KEY
+    const baseURL = "https://openrouter.ai/api/v1"
 
     if (!apiKey) {
-        return { error: "OpenAI API Key is missing. Please add it to your .env file." }
+        return { error: "OpenRouter API Key is missing. Please add it to your .env file." }
     }
 
     // 3. Extract video ID
@@ -229,12 +229,11 @@ export async function generateStudyNotesAction(formData: FormData) {
     try {
         const openai = new OpenAI({
             apiKey,
-            baseURL: baseURL || undefined,
+            baseURL,
         })
 
         const response = await openai.chat.completions.create({
-            model: "gpt-4o",
-            max_tokens: 2000,
+            model: "google/gemini-2.0-flash-001",
             messages: [
                 {
                     role: "system",
