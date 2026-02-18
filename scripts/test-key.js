@@ -1,7 +1,7 @@
 
 const OpenAI = require("openai");
 
-const key = "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";
+const key = "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";
 
 const openai = new OpenAI({
     apiKey: key,
