@@ -32,11 +32,11 @@ export default function DeepSearchPage() {
             </header>
 
             <div className="flex-1 overflow-hidden relative p-6">
-                <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
+                <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none z-0">
                     <div className="w-[800px] h-[800px] bg-blue-500/20 rounded-full blur-[100px] animate-pulse"></div>
                 </div>
 
-                <div className="h-full max-w-5xl mx-auto relative z-10">
+                <div className="h-full max-w-5xl mx-auto relative z-20 pointer-events-auto">
                     <DeepSearchInterface />
                 </div>
             </div>
