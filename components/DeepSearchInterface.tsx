@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Image from "next/image";
 
 type Message = {
     id: string;
@@ -73,7 +74,14 @@ export default function DeepSearchInterface() {
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
                 {messages.length === 0 && (
                     <div className="h-full flex flex-col items-center justify-center text-center p-8 opacity-60">
-                        <div className="text-6xl mb-4 text-blue-500/50">wf</div>
+                        <div className="relative w-24 h-24 mb-6">
+                            <Image
+                                src="/assets/deep-search.png"
+                                alt="Deep Search"
+                                fill
+                                className="object-contain drop-shadow-[0_0_20px_rgba(59,130,246,0.5)] animate-pulse"
+                            />
+                        </div>
                         <h3 className="text-2xl font-bold text-white mb-2">Deep Search Active</h3>
                         <p className="max-w-md text-gray-400">
                             Ask anything. I will search the live web for the most up-to-date information.

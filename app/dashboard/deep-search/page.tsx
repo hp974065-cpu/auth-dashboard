@@ -2,6 +2,7 @@
 
 import DeepSearchInterface from "@/components/DeepSearchInterface";
 import Link from "next/link";
+import Image from "next/image";
 
 export default function DeepSearchPage() {
 
@@ -12,8 +13,13 @@ export default function DeepSearchPage() {
                     <Link href="/dashboard" className="p-2 hover:bg-white/10 rounded-lg transition-colors text-gray-400 hover:text-white">
                         ←
                     </Link>
-                    <div className="p-2 bg-blue-500/20 rounded-lg text-blue-400">
-                        wf
+                    <div className="relative w-10 h-10">
+                        <Image
+                            src="/assets/deep-search.png"
+                            alt="Deep Search"
+                            fill
+                            className="object-contain drop-shadow-[0_0_10px_rgba(0,255,255,0.5)]"
+                        />
                     </div>
                     <div>
                         <h1 className="text-xl font-bold text-white neon-text">Deep Search Console</h1>
