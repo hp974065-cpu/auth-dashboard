@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
         const body = await req.json();
         const { question, documentId, workspaceId, useDeepSearch } = body;
 
-        if (!question || (!documentId && !workspaceId)) {
+        if (!question || (!documentId && !workspaceId && !useDeepSearch)) {
             return NextResponse.json(
                 { error: "Missing question or context (documentId or workspaceId)" },
                 { status: 400 }
