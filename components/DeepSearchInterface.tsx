@@ -125,13 +125,13 @@ export default function DeepSearchInterface() {
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         placeholder="Search the web..."
-                        className="flex-1 bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all shadow-inner"
+                        className="flex-1 bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all shadow-inner cursor-text"
                         disabled={loading}
                     />
                     <button
                         type="submit"
                         disabled={loading || !input.trim()}
-                        className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-6 py-2 rounded-xl hover:shadow-lg hover:shadow-blue-500/20 hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 transition-all font-semibold"
+                        className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-6 py-2 rounded-xl hover:shadow-lg hover:shadow-blue-500/20 hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all font-semibold cursor-pointer"
                     >
                         Search
                     </button>
