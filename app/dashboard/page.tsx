@@ -1,6 +1,7 @@
 import { auth, signOut } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import Link from "next/link"
+import Image from "next/image"
 
 export const dynamic = 'force-dynamic'
 
@@ -64,7 +65,14 @@ export default async function DashboardPage() {
                     {/* Deep Search Module */}
                     <Link href="/dashboard/deep-search" className="ai-card glass-panel glow-hover group">
                         <div className="ai-badge">Live Web</div>
-                        <div className="ai-card-icon group-hover:scale-110 transition-transform">wf</div>
+                        <div className="mb-5 relative w-24 h-24 group-hover:scale-110 transition-transform duration-300">
+                            <Image
+                                src="/assets/deep-search.png"
+                                alt="Deep Search"
+                                fill
+                                className="object-contain drop-shadow-[0_0_15px_rgba(0,255,255,0.3)]"
+                            />
+                        </div>
                         <div>
                             <h2>Deep Search</h2>
                             <p>Perform live web searches with Firecrawl integration.</p>
