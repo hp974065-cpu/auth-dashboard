@@ -65,7 +65,7 @@ export default async function DashboardPage() {
                     {/* Deep Search Module */}
                     <Link href="/dashboard/deep-search" className="ai-card glass-panel glow-hover group">
                         <div className="ai-badge">Live Web</div>
-                        <div className="mb-5 relative w-24 h-24 group-hover:scale-110 transition-transform duration-300">
+                        <div className="mb-5 relative w-16 h-16 group-hover:scale-110 transition-transform duration-300">
                             <Image
                                 src="/assets/deep-search.png"
                                 alt="Deep Search"
