@@ -29,10 +29,10 @@ export async function POST(req: NextRequest) {
 
         let context = "";
         let contextSource = "";
+        let forceWebSearch = false;
 
-        // 1. Retrieve Relevant Context
+        // 1. Retrieve Relevant Context — 3-Pass Strategy
         if (workspaceId) {
-            // Generate embedding for the question
             const openai = getOpenAIClient();
             const embeddingResponse = await openai.embeddings.create({
                 model: "openai/text-embedding-3-small",
@@ -40,52 +40,54 @@ export async function POST(req: NextRequest) {
             });
             const questionEmbedding = embeddingResponse.data[0].embedding;
 
-            // Fetch all chunks for the workspace (In-memory vector search)
-            // Note: For large workspaces, we would use pgvector or a vector DB.
-            // Fetch all chunks for the workspace (In-memory vector search)
-            // Note: For large workspaces, we would use pgvector or a vector DB.
             // @ts-ignore
             const chunks = await prisma.documentChunk.findMany({
                 where: { workspaceId },
                 include: { document: true },
             });
 
-            // Calculate similarity
-            const scoredChunks = chunks.map((chunk: any) => ({
-                ...chunk,
-                score: cosineSimilarity(questionEmbedding, chunk.embedding)
-            }));
-
-            // Sort by score descending
-            scoredChunks.sort((a: any, b: any) => b.score - a.score);
-
-            // Take top 5 chunks
-            const topChunks = scoredChunks.slice(0, 5);
-
-            // Filter out low relevance if needed, but for now just take top 5
-            // If top score is very low, we might trigger web search
-            const TOP_SCORE_THRESHOLD = 0.4;
-            const bestScore = topChunks.length > 0 ? topChunks[0].score : 0;
-
-            console.log(`Top chunk score: ${bestScore}`);
-
-            if (bestScore > TOP_SCORE_THRESHOLD) {
-                context = topChunks.map((chunk: any, idx: number) =>
-                    `[${idx + 1}] Document: ${chunk.document.title}\n${chunk.content}`
-                ).join("\n\n");
-
-                contextSource = "Workspace Documents";
+            if (chunks.length === 0) {
+                console.log("No document chunks in workspace. Forcing web search.");
+                forceWebSearch = true;
             } else {
-                console.log("Documents insufficient, enabling web search fallback.");
-                // If document relevance is low, force web search if not already enabled
-                if (!useDeepSearch) {
-                    // modifying the flag effectively for the logic below
-                    // (though we need to handle the variable scope)
-                    // We will set a flag to force web search
+                // Score all chunks
+                const scoredChunks = chunks.map((chunk: any) => ({
+                    ...chunk,
+                    score: cosineSimilarity(questionEmbedding, chunk.embedding)
+                }));
+                scoredChunks.sort((a: any, b: any) => b.score - a.score);
+
+                // === PASS 1: Standard (threshold 0.4, top-5) ===
+                let selectedChunks = scoredChunks.slice(0, 5).filter((c: any) => c.score > 0.4);
+                let passUsed = 1;
+                console.log(`Pass 1: ${selectedChunks.length} chunks above 0.4 (best: ${scoredChunks[0]?.score?.toFixed(3)})`);
+
+                // === PASS 2: Broad (threshold 0.25, top-10) ===
+                if (selectedChunks.length === 0) {
+                    selectedChunks = scoredChunks.slice(0, 10).filter((c: any) => c.score > 0.25);
+                    passUsed = 2;
+                    console.log(`Pass 2: ${selectedChunks.length} chunks above 0.25`);
+                }
+
+                // === PASS 3: Full scan (no threshold, top-15) ===
+                if (selectedChunks.length === 0) {
+                    selectedChunks = scoredChunks.slice(0, 15);
+                    passUsed = 3;
+                    console.log(`Pass 3: Taking top ${selectedChunks.length} chunks regardless of score`);
+                }
+
+                if (selectedChunks.length > 0) {
+                    context = selectedChunks.map((chunk: any, idx: number) =>
+                        `[${idx + 1}] (sourceType: document) Document: ${chunk.document.title}\n${chunk.content}`
+                    ).join("\n\n");
+                    contextSource = `Workspace Documents (Pass ${passUsed})`;
+                    console.log(`Using ${selectedChunks.length} chunks from Pass ${passUsed}`);
+                } else {
+                    console.log("All 3 passes returned no chunks. Forcing web search.");
+                    forceWebSearch = true;
                 }
             }
         } else if (documentId) {
-            // Legacy single document mode (or can use chunks too if we want)
             const document = await prisma.document.findUnique({
                 where: { id: documentId },
             });
@@ -93,14 +95,14 @@ export async function POST(req: NextRequest) {
             if (!document) return NextResponse.json({ error: "Document not found" }, { status: 404 });
             if (document.userId !== session.user.id) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
 
-            context = `--- DOCUMENT: ${document.title} ---\n${document.content.slice(0, 20000)}`;
+            context = `--- (sourceType: document) DOCUMENT: ${document.title} ---\n${document.content.slice(0, 20000)}`;
             contextSource = `Document: ${document.title}`;
         }
 
         // 2. Fetch Web Context (Deep Search)
-        // Trigger if useDeepSearch is TRUE OR if context is empty/low relevance
+        // Trigger if useDeepSearch is TRUE OR forceWebSearch (all 3 passes failed)
         let webContext = "";
-        const shouldSearchWeb = useDeepSearch || (!context && process.env.FIRECRAWL_API_KEY);
+        const shouldSearchWeb = useDeepSearch || (forceWebSearch && process.env.FIRECRAWL_API_KEY);
 
         if (shouldSearchWeb && process.env.FIRECRAWL_API_KEY) {
             try {
@@ -140,6 +142,21 @@ export async function POST(req: NextRequest) {
         });
 
         // 4. Generate AI Response
+        const hasWebContext = webContext && webContext.length > 0 && !webContext.startsWith("Web search failed");
+        const hasDocContext = context && context.length > 0;
+
+        // If neither documents nor web returned anything, short-circuit
+        if (!hasDocContext && !hasWebContext) {
+            const noDataAnswer = "I could not find any relevant information in your uploaded documents. Please make sure you have uploaded documents to this workspace, or enable Web Search to search the internet.";
+            await prisma.message.create({
+                data: { content: question, role: "user", documentId: documentId || undefined, workspaceId: workspaceId || undefined }
+            });
+            await prisma.message.create({
+                data: { content: noDataAnswer, role: "assistant", documentId: documentId || undefined, workspaceId: workspaceId || undefined }
+            });
+            return NextResponse.json({ answer: noDataAnswer });
+        }
+
         const systemPrompt = `You are an AI research assistant.
 Synthesize information from the provided workspace documents and web search results to answer the question.
 If information conflicts, prioritize the provided documents but mention the external web finding.
@@ -150,15 +167,13 @@ Sources:
 [2] Document Name (or URL)
 
 If information comes from:
-- uploaded documents → show document name
-- web pages → show URL
+- uploaded documents (sourceType: document) → show document name
+- web pages (sourceType: web) → show URL
 
-If the answer cannot be found in the context, say "I could not find the answer in the provided documents or web search results."`;
+If the answer cannot be found in the provided context, say "I could not find the answer in the provided documents or web search results."`;
 
-        const fullPrompt = `CONTEXT FROM DOCUMENTS:\n${context}
-
-${useDeepSearch ? `CONTEXT FROM WEB SEARCH:\n${webContext}\n` : ""}
-
+        const fullPrompt = `${hasDocContext ? `CONTEXT FROM DOCUMENTS:\n${context}\n\n` : ""}
+${hasWebContext ? `CONTEXT FROM WEB SEARCH:\n${webContext}\n\n` : ""}
 USER QUESTION: ${question}`;
 
         const openai = getOpenAIClient();
