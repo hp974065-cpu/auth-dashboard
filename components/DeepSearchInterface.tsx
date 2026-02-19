@@ -47,7 +47,10 @@ export default function DeepSearchInterface() {
                 }),
             });
 
-            if (!res.ok) throw new Error("Failed to get answer");
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || "Failed to get answer");
+            }
 
             const data = await res.json();
 
@@ -58,11 +61,11 @@ export default function DeepSearchInterface() {
             };
 
             setMessages((prev) => [...prev, assistantMessage]);
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
             setMessages((prev) => [
                 ...prev,
-                { id: Date.now().toString(), role: "assistant", content: "Error: Could not get response." },
+                { id: Date.now().toString(), role: "assistant", content: "Error: " + (error.message || "Could not get response.") },
             ]);
         } finally {
             setLoading(false);

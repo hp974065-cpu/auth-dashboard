@@ -131,15 +131,17 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // 3. Save User Message
-        await prisma.message.create({
-            data: {
-                content: question,
-                role: "user",
-                documentId: documentId || undefined,
-                workspaceId: workspaceId || undefined,
-            },
-        });
+        // 3. Save User Message (only if we have a context scope)
+        if (documentId || workspaceId) {
+            await prisma.message.create({
+                data: {
+                    content: question,
+                    role: "user",
+                    documentId: documentId || undefined,
+                    workspaceId: workspaceId || undefined,
+                },
+            });
+        }
 
         // 4. Generate AI Response
         const hasWebContext = webContext && webContext.length > 0 && !webContext.startsWith("Web search failed");
@@ -148,12 +150,14 @@ export async function POST(req: NextRequest) {
         // If neither documents nor web returned anything, short-circuit
         if (!hasDocContext && !hasWebContext) {
             const noDataAnswer = "I could not find any relevant information in your uploaded documents. Please make sure you have uploaded documents to this workspace, or enable Web Search to search the internet.";
-            await prisma.message.create({
-                data: { content: question, role: "user", documentId: documentId || undefined, workspaceId: workspaceId || undefined }
-            });
-            await prisma.message.create({
-                data: { content: noDataAnswer, role: "assistant", documentId: documentId || undefined, workspaceId: workspaceId || undefined }
-            });
+            if (documentId || workspaceId) {
+                await prisma.message.create({
+                    data: { content: question, role: "user", documentId: documentId || undefined, workspaceId: workspaceId || undefined }
+                });
+                await prisma.message.create({
+                    data: { content: noDataAnswer, role: "assistant", documentId: documentId || undefined, workspaceId: workspaceId || undefined }
+                });
+            }
             return NextResponse.json({ answer: noDataAnswer });
         }
 
@@ -196,15 +200,17 @@ USER QUESTION: ${question}`;
             );
         }
 
-        // 5. Save Assistant Message
-        await prisma.message.create({
-            data: {
-                content: answer,
-                role: "assistant",
-                documentId: documentId || undefined,
-                workspaceId: workspaceId || undefined,
-            },
-        });
+        // 5. Save Assistant Message (only if we have a context scope)
+        if (documentId || workspaceId) {
+            await prisma.message.create({
+                data: {
+                    content: answer,
+                    role: "assistant",
+                    documentId: documentId || undefined,
+                    workspaceId: workspaceId || undefined,
+                },
+            });
+        }
 
         return NextResponse.json({ answer });
     } catch (error: any) {
