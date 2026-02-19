@@ -162,15 +162,24 @@ ${useDeepSearch ? `CONTEXT FROM WEB SEARCH:\n${webContext}\n` : ""}
 USER QUESTION: ${question}`;
 
         const openai = getOpenAIClient();
-        const response = await openai.chat.completions.create({
-            model: "google/gemini-2.0-flash-001",
-            messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: fullPrompt }
-            ]
-        });
-
-        const answer = response.choices[0]?.message?.content || "Sorry, I couldn't generate an answer.";
+        let answer: string;
+        try {
+            const response = await openai.chat.completions.create({
+                model: "google/gemini-2.0-flash-001",
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: fullPrompt }
+                ]
+            });
+            answer = response.choices[0]?.message?.content || "Sorry, I couldn't generate an answer.";
+        } catch (aiError: any) {
+            console.error("OpenRouter AI completion FAILED:", aiError.message);
+            console.error("Full AI error:", JSON.stringify(aiError, null, 2));
+            return NextResponse.json(
+                { error: "AI model error: " + aiError.message, answer: "Error: " + aiError.message },
+                { status: 502 }
+            );
+        }
 
         // 5. Save Assistant Message
         await prisma.message.create({
@@ -183,10 +192,10 @@ USER QUESTION: ${question}`;
         });
 
         return NextResponse.json({ answer });
-    } catch (error) {
+    } catch (error: any) {
         console.error("Chat API error:", error);
         return NextResponse.json(
-            { error: "Internal Server Error" },
+            { error: "Internal Server Error: " + error.message },
             { status: 500 }
         );
     }

@@ -50,7 +50,10 @@ export default function ChatInterface({
                 body: JSON.stringify({ question: userMessage.content, documentId }),
             });
 
-            if (!res.ok) throw new Error("Failed to get answer");
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || "Failed to get answer");
+            }
 
             const data = await res.json();
 
@@ -61,11 +64,11 @@ export default function ChatInterface({
             };
 
             setMessages((prev) => [...prev, assistantMessage]);
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
             setMessages((prev) => [
                 ...prev,
-                { id: Date.now().toString(), role: "assistant", content: "Error: Could not get response." },
+                { id: Date.now().toString(), role: "assistant", content: "Error: " + (error.message || "Could not get response.") },
             ]);
         } finally {
             setLoading(false);
@@ -88,8 +91,8 @@ export default function ChatInterface({
                     >
                         <div
                             className={`max-w-[80%] rounded-lg p-3 ${msg.role === "user"
-                                    ? "bg-blue-600 text-white"
-                                    : "bg-white border text-gray-800 shadow-sm"
+                                ? "bg-blue-600 text-white"
+                                : "bg-white border text-gray-800 shadow-sm"
                                 }`}
                         >
                             <div className="whitespace-pre-wrap">{msg.content}</div>
