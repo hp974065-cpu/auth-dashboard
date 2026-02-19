@@ -141,7 +141,8 @@ export async function POST(req: NextRequest) {
 
         // 4. Generate AI Response
         const systemPrompt = `You are an AI research assistant.
-Use the provided workspace documents and web context to answer the question.
+Synthesize information from the provided workspace documents and web search results to answer the question.
+If information conflicts, prioritize the provided documents but mention the external web finding.
 Always cite sources using the format [1], [2], etc. matching the provided numbers.
 At the end of your response, list the unique sources you used in the format:
 Sources:
