@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
             // Generate embedding for the question
             const openai = getOpenAIClient();
             const embeddingResponse = await openai.embeddings.create({
-                model: "text-embedding-3-small",
+                model: "openai/text-embedding-3-small",
                 input: question,
             });
             const questionEmbedding = embeddingResponse.data[0].embedding;

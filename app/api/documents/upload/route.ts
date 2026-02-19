@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
 
                 const openai = getOpenAIClient();
                 const embeddingResponse = await openai.embeddings.create({
-                    model: "text-embedding-3-small",
+                    model: "openai/text-embedding-3-small",
                     input: batch,
                 });
 
@@ -92,6 +92,7 @@ export async function POST(req: NextRequest) {
             }
         } catch (embeddingError: any) {
             console.error("Embedding/Chunk Saving FAILED:", embeddingError);
+            console.error("Full error details:", JSON.stringify(embeddingError, null, 2));
             // We might want to delete the document if chunks failed?
             return NextResponse.json({ error: "Failed to generate embeddings or save chunks: " + embeddingError.message }, { status: 500 });
         }
