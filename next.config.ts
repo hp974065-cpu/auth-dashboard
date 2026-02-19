@@ -5,7 +5,13 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
 
-  serverExternalPackages: ["pdf-parse", "@mendable/firecrawl-js"],
+  serverExternalPackages: ["pdf-parse", "@mendable/firecrawl-js", "youtube-transcript"],
+
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '50mb',
+    },
+  },
 };
 
 export default nextConfig;

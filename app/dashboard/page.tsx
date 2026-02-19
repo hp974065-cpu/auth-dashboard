@@ -78,6 +78,16 @@ export default async function DashboardPage() {
                             <p>Perform live web searches with Firecrawl integration.</p>
                         </div>
                     </Link>
+
+                    {/* Study Notes Module */}
+                    <Link href="/dashboard/study-notes" className="ai-card glass-panel glow-hover group">
+                        <div className="ai-badge">AI Notes</div>
+                        <div className="ai-card-icon group-hover:scale-110 transition-transform">📚</div>
+                        <div>
+                            <h2>Study Notes</h2>
+                            <p>Generate AI study notes from YouTube videos instantly.</p>
+                        </div>
+                    </Link>
                 </div>
 
                 <div className="mt-12 opacity-50 text-center">
