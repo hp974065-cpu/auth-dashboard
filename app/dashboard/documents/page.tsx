@@ -40,15 +40,10 @@ export default async function DocumentsPage({
         orderBy: { createdAt: "desc" },
     }) : [];
 
-    // 4. Fetch Previous Messages (if needed, but ChatInterface handles its own state mostly, 
-    // or we can seed it with history for the workspace)
-    // For now we start fresh or specific chat history component can load it.
-    // If we want chat history per workspace, we can fetch it here.
-    const initialMessages = activeWorkspaceId ? await prisma.message.findMany({
-        where: { workspaceId: activeWorkspaceId },
-        orderBy: { createdAt: "asc" },
-        take: 50 // Limit history
-    }) : [];
+    // 4. Chat History
+    // User requested ephemeral chat (clears on tab close/switch).
+    // We strictly return an empty array here so every session starts fresh.
+    const initialMessages: any[] = [];
 
     return (
         <div className="p-6 max-w-7xl mx-auto">
