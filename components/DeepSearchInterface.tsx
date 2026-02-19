@@ -138,7 +138,6 @@ export default function DeepSearchInterface() {
                         placeholder="Search the web..."
                         className="flex-1 bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
                         disabled={loading}
-                        autoFocus
                     />
                     <button
                         type="submit"
